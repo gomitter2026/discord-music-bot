@@ -20,7 +20,7 @@ if not discord.opus.is_loaded():
 from config import DISCORD_TOKEN, COMMAND_PREFIX
 import config
 
-# --- 絶対パスで music フォルダの場所を確実に固定 ---
+# パス計算のデバッグ出力
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 raw_music_dir = str(getattr(config, "MUSIC_DIR", "music")).lstrip(".").lstrip("/")
 MUSIC_DIR = os.path.join(BASE_DIR, raw_music_dir)
@@ -31,22 +31,19 @@ intents.voice_states = True
 
 bot = commands.Bot(command_prefix=COMMAND_PREFIX, intents=intents)
 
-ALLOWED_EXTENSIONS = (".mp3",)
+ALLOWED_EXTENSIONS = (".mp3", ".MP3")
 
 
 class GuildMusicState:
-    """サーバー(ギルド)ごとの再生状態を保持するクラス"""
-
     def __init__(self):
-        self.queue: list[str] = []       # 再生待ちファイル名のリスト
-        self.current: str | None = None  # 現在再生中のファイル名
+        self.queue: list[str] = []
+        self.current: str | None = None
         self.voice_client: discord.VoiceClient | None = None
 
     def is_playing(self) -> bool:
         return bool(self.voice_client and self.voice_client.is_playing())
 
 
-# ギルドID -> GuildMusicState
 music_states: dict[int, GuildMusicState] = {}
 
 
@@ -64,19 +61,15 @@ def list_music_files() -> list[str]:
 
 
 def find_music_file(keyword: str) -> str | None:
-    """曲名の部分一致・拡張子省略に対応してファイルを探す"""
     files = list_music_files()
     keyword_lower = keyword.lower()
 
-    # 完全一致(拡張子込み)
     for f in files:
         if f.lower() == keyword_lower:
             return f
-    # 完全一致(拡張子なし)
     for f in files:
         if os.path.splitext(f)[0].lower() == keyword_lower:
             return f
-    # 部分一致
     matches = [f for f in files if keyword_lower in f.lower()]
     if len(matches) == 1:
         return matches[0]
@@ -84,7 +77,6 @@ def find_music_file(keyword: str) -> str | None:
 
 
 async def ensure_voice(ctx: commands.Context) -> discord.VoiceClient | None:
-    """コマンド実行者のボイスチャンネルにBotを接続する"""
     state = get_state(ctx.guild.id)
 
     if ctx.author.voice is None or ctx.author.voice.channel is None:
@@ -107,7 +99,6 @@ async def ensure_voice(ctx: commands.Context) -> discord.VoiceClient | None:
 
 
 def play_next(ctx: commands.Context):
-    """再生終了時に呼ばれ、キューがあれば次の曲を再生する"""
     state = get_state(ctx.guild.id)
 
     if not state.queue:
@@ -163,8 +154,14 @@ async def _notify_and_play_next(ctx: commands.Context):
 @bot.event
 async def on_ready():
     print(f"ログインしました: {bot.user} (ID: {bot.user.id})")
-    print(f"音源フォルダ(絶対パス): {MUSIC_DIR}")
-    print(f"検出されたファイル: {list_music_files()}")
+    print(f"--- [デバッグ情報] ---")
+    print(f"カレントディレクトリの中身: {os.listdir(BASE_DIR)}")
+    print(f"音源フォルダ指定パス: {MUSIC_DIR}")
+    print(f"音源フォルダが存在するか: {os.path.exists(MUSIC_DIR)}")
+    if os.path.exists(MUSIC_DIR):
+        print(f"音源フォルダ内の全ファイル: {os.listdir(MUSIC_DIR)}")
+    print(f"検出されたMP3ファイル: {list_music_files()}")
+    print(f"----------------------")
 
 
 @bot.command(name="list", help="musicフォルダ内の曲一覧を表示します")
