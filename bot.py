@@ -1,6 +1,7 @@
 import asyncio
 import os
 import re
+import traceback
 
 import discord
 from discord.ext import commands
@@ -106,7 +107,6 @@ def play_next(ctx: commands.Context):
     state.current = next_file
     filepath = os.path.join(MUSIC_DIR, next_file)
 
-    # --- FFmpegの処理オプションを設定 ---
     ffmpeg_options = {
         'before_options': '-nostdin',
         'options': '-vn'
@@ -116,12 +116,13 @@ def play_next(ctx: commands.Context):
         source = discord.FFmpegPCMAudio(filepath, **ffmpeg_options)
     except Exception as e:
         print(f"FFmpeg Error: {e}")
-        asyncio.run_coroutine_threadsafe(ctx.send(f"音声読み込みエラー: `{e}`"), bot.loop)
+        asyncio.run_coroutine_threadsafe(ctx.send(f"音声作成エラー: `{e}`"), bot.loop)
         return
 
     def after_playing(error):
         if error:
-            print(f"再生エラー: {error}")
+            print(f"再生中エラー詳細: {error}")
+            asyncio.run_coroutine_threadsafe(ctx.send(f"⚠️ 再生中にエラーが発生しました: `{error}`"), bot.loop)
         fut = asyncio.run_coroutine_threadsafe(
             _notify_and_play_next(ctx), bot.loop
         )
@@ -130,7 +131,11 @@ def play_next(ctx: commands.Context):
         except Exception as e:
             print(f"次曲再生時エラー: {e}")
 
-    state.voice_client.play(source, after=after_playing)
+    try:
+        state.voice_client.play(source, after=after_playing)
+    except Exception as e:
+        print(f"play実行エラー: {e}")
+        asyncio.run_coroutine_threadsafe(ctx.send(f"⚠️ play実行時エラー: `{e}`"), bot.loop)
 
 
 async def _notify_and_play_next(ctx: commands.Context):
@@ -145,14 +150,6 @@ async def on_ready():
     print(f"ログインしました: {bot.user} (ID: {bot.user.id})")
     print(f"音源フォルダ(絶対パス): {MUSIC_DIR}")
     print(f"検出されたファイル: {list_music_files()}")
-    
-    # ボイス機能（Opus）のロード試行
-    if not discord.opus.is_loaded():
-        try:
-            discord.opus.load_opus("libopus.so.0")
-            print("Opus loaded successfully.")
-        except Exception as e:
-            print(f"Opus loading note: {e}")
 
 
 @bot.command(name="list", help="musicフォルダ内の曲一覧を表示します")
@@ -185,7 +182,7 @@ async def play(ctx: commands.Context, *, keyword: str):
     else:
         state.queue.insert(0, filename)
         play_next(ctx)
-        await ctx.send(f"再生開始: **{filename}**")
+        await ctx.send(f"再生開始処理を実行中: **{filename}**")
         return
 
     await ctx.send(f"再生を切り替えます: **{filename}**")
