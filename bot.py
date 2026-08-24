@@ -106,8 +106,14 @@ def play_next(ctx: commands.Context):
     state.current = next_file
     filepath = os.path.join(MUSIC_DIR, next_file)
 
+    # --- FFmpegの処理オプションを設定 ---
+    ffmpeg_options = {
+        'before_options': '-nostdin',
+        'options': '-vn'
+    }
+
     try:
-        source = discord.FFmpegPCMAudio(filepath)
+        source = discord.FFmpegPCMAudio(filepath, **ffmpeg_options)
     except Exception as e:
         print(f"FFmpeg Error: {e}")
         asyncio.run_coroutine_threadsafe(ctx.send(f"音声読み込みエラー: `{e}`"), bot.loop)
