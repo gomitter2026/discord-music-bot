@@ -84,7 +84,8 @@ async def ensure_voice(ctx: commands.Context) -> discord.VoiceClient | None:
 
     try:
         if state.voice_client is None or not state.voice_client.is_connected():
-            state.voice_client = await channel.connect()
+            # タイムアウト時間を延長して確実に接続を確立させる
+            state.voice_client = await channel.connect(timeout=20.0, reconnect=True)
         elif state.voice_client.channel != channel:
             await state.voice_client.move_to(channel)
     except Exception as e:
@@ -132,10 +133,14 @@ def play_next(ctx: commands.Context):
             print(f"次曲再生時エラー: {e}")
 
     try:
-        state.voice_client.play(source, after=after_playing)
+        if state.voice_client and state.voice_client.is_connected():
+            state.voice_client.play(source, after=after_playing)
+        else:
+            asyncio.run_coroutine_threadsafe(ctx.send("⚠️ ボイス接続が切断されていたため再生を開始できませんでした。"), bot.loop)
     except Exception as e:
-        print(f"play実行エラー: {e}")
-        asyncio.run_coroutine_threadsafe(ctx.send(f"⚠️ play実行時エラー: `{e}`"), bot.loop)
+        err_msg = str(e) if str(e) else repr(e)
+        print(f"play実行エラー: {err_msg}")
+        asyncio.run_coroutine_threadsafe(ctx.send(f"⚠️ play実行時エラー: `{err_msg}`"), bot.loop)
 
 
 async def _notify_and_play_next(ctx: commands.Context):
