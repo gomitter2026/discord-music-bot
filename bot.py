@@ -6,10 +6,21 @@ import traceback
 import discord
 from discord.ext import commands
 
+# --- Linux/Railway環境で libopus を自動ロードさせる設定 ---
+if not discord.opus.is_loaded():
+    opus_libs = ['libopus.so.0', 'libopus.so', 'libopus-0.dll', 'opus.dll', 'opus']
+    for lib in opus_libs:
+        try:
+            discord.opus.load_opus(lib)
+            print(f"Opus loaded successfully using: {lib}")
+            break
+        except OSError:
+            continue
+
 from config import DISCORD_TOKEN, COMMAND_PREFIX
 import config
 
-# --- 1. 絶対パスで music フォルダの場所を確実に固定 ---
+# --- 絶対パスで music フォルダの場所を確実に固定 ---
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 raw_music_dir = str(getattr(config, "MUSIC_DIR", "music")).lstrip(".").lstrip("/")
 MUSIC_DIR = os.path.join(BASE_DIR, raw_music_dir)
@@ -84,7 +95,6 @@ async def ensure_voice(ctx: commands.Context) -> discord.VoiceClient | None:
 
     try:
         if state.voice_client is None or not state.voice_client.is_connected():
-            # タイムアウト時間を延長して確実に接続を確立させる
             state.voice_client = await channel.connect(timeout=20.0, reconnect=True)
         elif state.voice_client.channel != channel:
             await state.voice_client.move_to(channel)
