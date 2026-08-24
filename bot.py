@@ -10,7 +10,6 @@ import config
 
 # --- 1. 絶対パスで music フォルダの場所を確実に固定 ---
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-# config.py の設定値を読み込みつつ、安全なパスを結合
 raw_music_dir = str(getattr(config, "MUSIC_DIR", "music")).lstrip(".").lstrip("/")
 MUSIC_DIR = os.path.join(BASE_DIR, raw_music_dir)
 
@@ -82,10 +81,15 @@ async def ensure_voice(ctx: commands.Context) -> discord.VoiceClient | None:
 
     channel = ctx.author.voice.channel
 
-    if state.voice_client is None or not state.voice_client.is_connected():
-        state.voice_client = await channel.connect()
-    elif state.voice_client.channel != channel:
-        await state.voice_client.move_to(channel)
+    try:
+        if state.voice_client is None or not state.voice_client.is_connected():
+            state.voice_client = await channel.connect()
+        elif state.voice_client.channel != channel:
+            await state.voice_client.move_to(channel)
+    except Exception as e:
+        await ctx.send(f"ボイスチャンネル接続エラー: `{e}`")
+        print(f"Voice Connection Error: {e}")
+        return None
 
     return state.voice_client
 
@@ -102,12 +106,16 @@ def play_next(ctx: commands.Context):
     state.current = next_file
     filepath = os.path.join(MUSIC_DIR, next_file)
 
-    source = discord.FFmpegPCMAudio(filepath)
+    try:
+        source = discord.FFmpegPCMAudio(filepath)
+    except Exception as e:
+        print(f"FFmpeg Error: {e}")
+        asyncio.run_coroutine_threadsafe(ctx.send(f"音声読み込みエラー: `{e}`"), bot.loop)
+        return
 
     def after_playing(error):
         if error:
             print(f"再生エラー: {error}")
-        # 次の曲へ(イベントループに戻す)
         fut = asyncio.run_coroutine_threadsafe(
             _notify_and_play_next(ctx), bot.loop
         )
@@ -131,6 +139,14 @@ async def on_ready():
     print(f"ログインしました: {bot.user} (ID: {bot.user.id})")
     print(f"音源フォルダ(絶対パス): {MUSIC_DIR}")
     print(f"検出されたファイル: {list_music_files()}")
+    
+    # ボイス機能（Opus）のロード試行
+    if not discord.opus.is_loaded():
+        try:
+            discord.opus.load_opus("libopus.so.0")
+            print("Opus loaded successfully.")
+        except Exception as e:
+            print(f"Opus loading note: {e}")
 
 
 @bot.command(name="list", help="musicフォルダ内の曲一覧を表示します")
@@ -158,7 +174,7 @@ async def play(ctx: commands.Context, *, keyword: str):
     state.queue.clear()
 
     if vc.is_playing() or vc.is_paused():
-        vc.stop()  # after_playing 経由で次を再生しようとするので、先にキューへ積む
+        vc.stop()
         state.queue.insert(0, filename)
     else:
         state.queue.insert(0, filename)
@@ -214,7 +230,7 @@ async def playall(ctx: commands.Context):
 async def skip(ctx: commands.Context):
     state = get_state(ctx.guild.id)
     if state.voice_client and (state.voice_client.is_playing() or state.voice_client.is_paused()):
-        state.voice_client.stop()  # after_playing 経由で次の曲が自動再生される
+        state.voice_client.stop()
         await ctx.send("スキップしました。")
     else:
         await ctx.send("現在再生中の曲がありません。")
