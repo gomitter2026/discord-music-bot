@@ -8,8 +8,9 @@ from discord.ext import commands
 from config import DISCORD_TOKEN, COMMAND_PREFIX
 import config
 
-# bot.py が置かれているディレクトリの絶対パスを取得し、絶対パスとして MUSIC_DIR を定義する
+# --- 1. 絶対パスで music フォルダの場所を確実に固定 ---
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+# config.py の設定値を読み込みつつ、安全なパスを結合
 raw_music_dir = str(getattr(config, "MUSIC_DIR", "music")).lstrip(".").lstrip("/")
 MUSIC_DIR = os.path.join(BASE_DIR, raw_music_dir)
 
