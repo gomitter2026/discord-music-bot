@@ -20,10 +20,8 @@ if not discord.opus.is_loaded():
 from config import DISCORD_TOKEN, COMMAND_PREFIX
 import config
 
-# パス計算のデバッグ出力
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-raw_music_dir = str(getattr(config, "MUSIC_DIR", "music")).lstrip(".").lstrip("/")
-MUSIC_DIR = os.path.join(BASE_DIR, raw_music_dir)
+# --- フォルダパスの重複を防止する安全な指定 ---
+MUSIC_DIR = os.path.abspath(getattr(config, "MUSIC_DIR", "music"))
 
 intents = discord.Intents.default()
 intents.message_content = True
@@ -155,7 +153,6 @@ async def _notify_and_play_next(ctx: commands.Context):
 async def on_ready():
     print(f"ログインしました: {bot.user} (ID: {bot.user.id})")
     print(f"--- [デバッグ情報] ---")
-    print(f"カレントディレクトリの中身: {os.listdir(BASE_DIR)}")
     print(f"音源フォルダ指定パス: {MUSIC_DIR}")
     print(f"音源フォルダが存在するか: {os.path.exists(MUSIC_DIR)}")
     if os.path.exists(MUSIC_DIR):
