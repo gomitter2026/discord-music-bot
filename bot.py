@@ -5,7 +5,13 @@ import re
 import discord
 from discord.ext import commands
 
-from config import DISCORD_TOKEN, COMMAND_PREFIX, MUSIC_DIR
+from config import DISCORD_TOKEN, COMMAND_PREFIX
+import config
+
+# bot.py が置かれているディレクトリの絶対パスを取得し、絶対パスとして MUSIC_DIR を定義する
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+raw_music_dir = str(getattr(config, "MUSIC_DIR", "music")).lstrip(".").lstrip("/")
+MUSIC_DIR = os.path.join(BASE_DIR, raw_music_dir)
 
 intents = discord.Intents.default()
 intents.message_content = True
@@ -122,7 +128,8 @@ async def _notify_and_play_next(ctx: commands.Context):
 @bot.event
 async def on_ready():
     print(f"ログインしました: {bot.user} (ID: {bot.user.id})")
-    print(f"音源フォルダ: {MUSIC_DIR}")
+    print(f"音源フォルダ(絶対パス): {MUSIC_DIR}")
+    print(f"検出されたファイル: {list_music_files()}")
 
 
 @bot.command(name="list", help="musicフォルダ内の曲一覧を表示します")
