@@ -6,15 +6,23 @@ import traceback
 import discord
 from discord.ext import commands
 
-# --- Linux/Railway環境で libopus を自動ロードさせる設定 ---
+# --- Linux/Railway環境で Opus を強力にロードする処理 ---
 if not discord.opus.is_loaded():
-    opus_libs = ['libopus.so.0', 'libopus.so', 'libopus-0.dll', 'opus.dll', 'opus']
+    opus_libs = [
+        'libopus.so.0',
+        'libopus.so',
+        'libopus-0.dll',
+        'opus.dll',
+        'opus',
+        '/usr/lib/x86_64-linux-gnu/libopus.so.0',
+        '/usr/lib/x86_64-linux-gnu/libopus.so'
+    ]
     for lib in opus_libs:
         try:
             discord.opus.load_opus(lib)
             print(f"Opus loaded successfully using: {lib}")
             break
-        except OSError:
+        except Exception:
             continue
 
 from config import DISCORD_TOKEN, COMMAND_PREFIX
