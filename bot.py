@@ -1,4 +1,5 @@
 import os
+import sys
 import ctypes
 import ctypes.util
 import asyncio
@@ -6,15 +7,44 @@ import discord
 from discord.ext import commands
 import imageio_ffmpeg
 
-# --- Opusライブラリを最優先で強制読み込み ---
+# --- PyNaCl同梱の libopus を強制的に探索・ロードする処理 ---
 if not discord.opus.is_loaded():
-    # システム上の opus ライブラリを探す
-    opus_path = ctypes.util.find_library('opus')
-    if opus_path:
-        discord.opus.load_opus(opus_path)
-    else:
-        # 見つからない場合のフォールバック（Linux標準パス）
-        for lib in ['libopus.so.0', 'libopus.so', '/usr/lib/x86_64-linux-gnu/libopus.so.0']:
+    loaded = False
+    
+    # 1. PyNaCl のパッケージ内にある libopus を直接探す
+    try:
+        import nacl
+        nacl_dir = os.path.dirname(nacl.__file__)
+        # nacl フォルダ内やその周辺の .so ファイルを全探索
+        for root, dirs, files in os.walk(nacl_dir):
+            for file in files:
+                if 'opus' in file.lower() or file.endswith('.so') or file.endswith('.so.0'):
+                    try:
+                        discord.opus.load_opus(os.path.join(root, file))
+                        if discord.opus.is_loaded():
+                            print(f"PyNaCl経由でOpusロード成功: {file}")
+                            loaded = True
+                            break
+                    except Exception:
+                        continue
+            if loaded:
+                break
+    except Exception as e:
+        print(f"PyNaCl探索エラー: {e}")
+
+    # 2. それでもダメならシステム検索
+    if not loaded:
+        opus_path = ctypes.util.find_library('opus') or ctypes.util.find_library('libopus')
+        if opus_path:
+            try:
+                discord.opus.load_opus(opus_path)
+                loaded = True
+            except Exception:
+                pass
+
+    # 3. 直指定フォールバック
+    if not loaded:
+        for lib in ['libopus.so.0', 'libopus.so', 'libopus.so.0.8.0', '/usr/lib/x86_64-linux-gnu/libopus.so.0']:
             try:
                 discord.opus.load_opus(lib)
                 break
@@ -154,7 +184,7 @@ async def _notify_and_play_next(ctx: commands.Context):
 @bot.event
 async def on_ready():
     print(f"ログイン完了: {bot.user}")
-    print(f"Opus Loaded Status: {discord.opus.is_loaded()}")
+    print(f"Opus ロード状態: {discord.opus.is_loaded()}")
 
 
 @bot.command(name="list")
