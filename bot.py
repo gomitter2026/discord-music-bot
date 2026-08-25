@@ -5,6 +5,7 @@ import traceback
 
 import discord
 from discord.ext import commands
+import imageio_ffmpeg
 
 # --- Linux/Railway環境で Opus を強力にロードする処理 ---
 if not discord.opus.is_loaded():
@@ -25,10 +26,12 @@ if not discord.opus.is_loaded():
         except Exception:
             continue
 
+# imageio-ffmpeg から FFmpeg の実行ファイルパスを自動取得
+FFMPEG_EXECUTABLE = imageio_ffmpeg.get_ffmpeg_exe()
+
 from config import DISCORD_TOKEN, COMMAND_PREFIX
 import config
 
-# --- フォルダパスの重複を防止する安全な指定 ---
 MUSIC_DIR = os.path.abspath(getattr(config, "MUSIC_DIR", "music"))
 
 intents = discord.Intents.default()
@@ -121,7 +124,8 @@ def play_next(ctx: commands.Context):
     }
 
     try:
-        source = discord.FFmpegPCMAudio(filepath, **ffmpeg_options)
+        # 自動取得した FFmpeg パスを指定して読み込み
+        source = discord.FFmpegPCMAudio(filepath, executable=FFMPEG_EXECUTABLE, **ffmpeg_options)
     except Exception as e:
         print(f"FFmpeg Error: {e}")
         asyncio.run_coroutine_threadsafe(ctx.send(f"音声作成エラー: `{e}`"), bot.loop)
@@ -160,13 +164,9 @@ async def _notify_and_play_next(ctx: commands.Context):
 @bot.event
 async def on_ready():
     print(f"ログインしました: {bot.user} (ID: {bot.user.id})")
-    print(f"--- [デバッグ情報] ---")
+    print(f"FFmpeg Executable Path: {FFMPEG_EXECUTABLE}")
     print(f"音源フォルダ指定パス: {MUSIC_DIR}")
-    print(f"音源フォルダが存在するか: {os.path.exists(MUSIC_DIR)}")
-    if os.path.exists(MUSIC_DIR):
-        print(f"音源フォルダ内の全ファイル: {os.listdir(MUSIC_DIR)}")
     print(f"検出されたMP3ファイル: {list_music_files()}")
-    print(f"----------------------")
 
 
 @bot.command(name="list", help="musicフォルダ内の曲一覧を表示します")
