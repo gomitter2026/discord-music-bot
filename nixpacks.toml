@@ -1,2 +1,0 @@
-[providers]
-nix = { nixPkgs = ["ffmpeg", "opus"] }
