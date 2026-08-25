@@ -1,32 +1,27 @@
-import asyncio
 import os
-import re
-import traceback
-
+import ctypes
+import ctypes.util
+import asyncio
 import discord
 from discord.ext import commands
 import imageio_ffmpeg
 
-# --- Linux/Railway環境で Opus を強力にロードする処理 ---
+# --- Opusライブラリを最優先で強制読み込み ---
 if not discord.opus.is_loaded():
-    opus_libs = [
-        'libopus.so.0',
-        'libopus.so',
-        'libopus-0.dll',
-        'opus.dll',
-        'opus',
-        '/usr/lib/x86_64-linux-gnu/libopus.so.0',
-        '/usr/lib/x86_64-linux-gnu/libopus.so'
-    ]
-    for lib in opus_libs:
-        try:
-            discord.opus.load_opus(lib)
-            print(f"Opus loaded successfully using: {lib}")
-            break
-        except Exception:
-            continue
+    # システム上の opus ライブラリを探す
+    opus_path = ctypes.util.find_library('opus')
+    if opus_path:
+        discord.opus.load_opus(opus_path)
+    else:
+        # 見つからない場合のフォールバック（Linux標準パス）
+        for lib in ['libopus.so.0', 'libopus.so', '/usr/lib/x86_64-linux-gnu/libopus.so.0']:
+            try:
+                discord.opus.load_opus(lib)
+                break
+            except Exception:
+                continue
 
-# imageio-ffmpeg から FFmpeg の実行ファイルパスを自動取得
+# FFmpeg パスの自動取得
 FFMPEG_EXECUTABLE = imageio_ffmpeg.get_ffmpeg_exe()
 
 from config import DISCORD_TOKEN, COMMAND_PREFIX
@@ -101,7 +96,6 @@ async def ensure_voice(ctx: commands.Context) -> discord.VoiceClient | None:
             await state.voice_client.move_to(channel)
     except Exception as e:
         await ctx.send(f"ボイスチャンネル接続エラー: `{e}`")
-        print(f"Voice Connection Error: {e}")
         return None
 
     return state.voice_client
@@ -124,33 +118,29 @@ def play_next(ctx: commands.Context):
     }
 
     try:
-        # 自動取得した FFmpeg パスを指定して読み込み
         source = discord.FFmpegPCMAudio(filepath, executable=FFMPEG_EXECUTABLE, **ffmpeg_options)
     except Exception as e:
-        print(f"FFmpeg Error: {e}")
         asyncio.run_coroutine_threadsafe(ctx.send(f"音声作成エラー: `{e}`"), bot.loop)
         return
 
     def after_playing(error):
         if error:
-            print(f"再生中エラー詳細: {error}")
-            asyncio.run_coroutine_threadsafe(ctx.send(f"⚠️ 再生中にエラーが発生しました: `{error}`"), bot.loop)
+            asyncio.run_coroutine_threadsafe(ctx.send(f"⚠️ 再生中エラー: `{error}`"), bot.loop)
         fut = asyncio.run_coroutine_threadsafe(
             _notify_and_play_next(ctx), bot.loop
         )
         try:
             fut.result()
-        except Exception as e:
-            print(f"次曲再生時エラー: {e}")
+        except Exception:
+            pass
 
     try:
         if state.voice_client and state.voice_client.is_connected():
             state.voice_client.play(source, after=after_playing)
         else:
-            asyncio.run_coroutine_threadsafe(ctx.send("⚠️ ボイス接続が切断されていたため再生を開始できませんでした。"), bot.loop)
+            asyncio.run_coroutine_threadsafe(ctx.send("⚠️ ボイス接続が切断されました。"), bot.loop)
     except Exception as e:
         err_msg = str(e) if str(e) else repr(e)
-        print(f"play実行エラー: {err_msg}")
         asyncio.run_coroutine_threadsafe(ctx.send(f"⚠️ play実行時エラー: `{err_msg}`"), bot.loop)
 
 
@@ -163,23 +153,21 @@ async def _notify_and_play_next(ctx: commands.Context):
 
 @bot.event
 async def on_ready():
-    print(f"ログインしました: {bot.user} (ID: {bot.user.id})")
-    print(f"FFmpeg Executable Path: {FFMPEG_EXECUTABLE}")
-    print(f"音源フォルダ指定パス: {MUSIC_DIR}")
-    print(f"検出されたMP3ファイル: {list_music_files()}")
+    print(f"ログイン完了: {bot.user}")
+    print(f"Opus Loaded Status: {discord.opus.is_loaded()}")
 
 
-@bot.command(name="list", help="musicフォルダ内の曲一覧を表示します")
+@bot.command(name="list")
 async def list_songs(ctx: commands.Context):
     files = list_music_files()
     if not files:
-        await ctx.send(f"`{MUSIC_DIR}` にMP3ファイルが見つかりませんでした。")
+        await ctx.send(f"`{MUSIC_DIR}` にMP3ファイルが見つかりません。")
         return
     listing = "\n".join(f"- {f}" for f in files)
     await ctx.send(f"**利用可能な曲一覧**\n{listing}")
 
 
-@bot.command(name="play", help="指定した曲を1曲再生します(現在の再生を中断)")
+@bot.command(name="play")
 async def play(ctx: commands.Context, *, keyword: str):
     vc = await ensure_voice(ctx)
     if vc is None:
@@ -187,7 +175,7 @@ async def play(ctx: commands.Context, *, keyword: str):
 
     filename = find_music_file(keyword)
     if filename is None:
-        await ctx.send(f"曲が見つかりませんでした: `{keyword}`\n`{COMMAND_PREFIX}list` で一覧を確認してください。")
+        await ctx.send(f"曲が見つかりません: `{keyword}`")
         return
 
     state = get_state(ctx.guild.id)
@@ -199,104 +187,23 @@ async def play(ctx: commands.Context, *, keyword: str):
     else:
         state.queue.insert(0, filename)
         play_next(ctx)
-        await ctx.send(f"再生開始処理を実行中: **{filename}**")
-        return
-
-    await ctx.send(f"再生を切り替えます: **{filename}**")
-
-
-@bot.command(name="qadd", aliases=["queue"], help="曲をキューに追加します")
-async def qadd(ctx: commands.Context, *, keyword: str):
-    filename = find_music_file(keyword)
-    if filename is None:
-        await ctx.send(f"曲が見つかりませんでした: `{keyword}`\n`{COMMAND_PREFIX}list` で一覧を確認してください。")
-        return
-
-    vc = await ensure_voice(ctx)
-    if vc is None:
-        return
-
-    state = get_state(ctx.guild.id)
-    state.queue.append(filename)
-
-    if not vc.is_playing() and not vc.is_paused():
-        play_next(ctx)
         await ctx.send(f"再生開始: **{filename}**")
-    else:
-        await ctx.send(f"キューに追加しました: **{filename}**(現在 {len(state.queue)} 曲待ち)")
-
-
-@bot.command(name="playall", help="musicフォルダの曲を全てキューに入れて順番に再生します")
-async def playall(ctx: commands.Context):
-    files = list_music_files()
-    if not files:
-        await ctx.send("再生できる曲がありません。")
         return
 
-    vc = await ensure_voice(ctx)
-    if vc is None:
-        return
-
-    state = get_state(ctx.guild.id)
-    state.queue.extend(files)
-
-    if not vc.is_playing() and not vc.is_paused():
-        play_next(ctx)
-
-    await ctx.send(f"{len(files)} 曲をキューに追加しました。順番に再生します。")
+    await ctx.send(f"曲を切り替えます: **{filename}**")
 
 
-@bot.command(name="skip", help="今の曲をスキップして次の曲を再生します")
-async def skip(ctx: commands.Context):
-    state = get_state(ctx.guild.id)
-    if state.voice_client and (state.voice_client.is_playing() or state.voice_client.is_paused()):
-        state.voice_client.stop()
-        await ctx.send("スキップしました。")
-    else:
-        await ctx.send("現在再生中の曲がありません。")
-
-
-@bot.command(name="pause", help="再生を一時停止します")
-async def pause(ctx: commands.Context):
-    state = get_state(ctx.guild.id)
-    if state.voice_client and state.voice_client.is_playing():
-        state.voice_client.pause()
-        await ctx.send("一時停止しました。")
-    else:
-        await ctx.send("再生中の曲がありません。")
-
-
-@bot.command(name="resume", help="一時停止した再生を再開します")
-async def resume(ctx: commands.Context):
-    state = get_state(ctx.guild.id)
-    if state.voice_client and state.voice_client.is_paused():
-        state.voice_client.resume()
-        await ctx.send("再生を再開しました。")
-    else:
-        await ctx.send("一時停止中の曲がありません。")
-
-
-@bot.command(name="stop", help="再生を停止してキューをクリアします")
+@bot.command(name="stop")
 async def stop(ctx: commands.Context):
     state = get_state(ctx.guild.id)
     state.queue.clear()
     if state.voice_client:
         state.voice_client.stop()
     state.current = None
-    await ctx.send("停止してキューをクリアしました。")
+    await ctx.send("再生を停止しました。")
 
 
-@bot.command(name="nowplaying", aliases=["np"], help="現在再生中の曲を表示します")
-async def nowplaying(ctx: commands.Context):
-    state = get_state(ctx.guild.id)
-    if state.current:
-        remaining = len(state.queue)
-        await ctx.send(f"再生中: **{state.current}**(待ち {remaining} 曲)")
-    else:
-        await ctx.send("現在再生中の曲はありません。")
-
-
-@bot.command(name="leave", help="ボイスチャンネルから切断します")
+@bot.command(name="leave")
 async def leave(ctx: commands.Context):
     state = get_state(ctx.guild.id)
     if state.voice_client:
@@ -305,8 +212,6 @@ async def leave(ctx: commands.Context):
         state.queue.clear()
         state.current = None
         await ctx.send("切断しました。")
-    else:
-        await ctx.send("ボイスチャンネルに接続していません。")
 
 
 if __name__ == "__main__":
