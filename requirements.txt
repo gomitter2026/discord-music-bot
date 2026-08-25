@@ -1,5 +1,4 @@
 discord.py[voice]>=2.5.0
 PyNaCl>=1.5.0
-opuslib
-imageio-ffmpeg
 python-dotenv
+imageio-ffmpeg
