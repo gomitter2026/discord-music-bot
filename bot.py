@@ -1,3 +1,17 @@
+import discord
+from discord.ext import commands
+
+# --- Linux環境用 Opus手動ロード処理 ---
+if not discord.opus.is_loaded():
+    opus_libs = ['libopus.so.0', 'libopus.so', 'libopus-0.dll']
+    for lib in opus_libs:
+        try:
+            discord.opus.load_opus(lib)
+            print(f"Opus successfully loaded: {lib}")
+            break
+        except Exception:
+            continue
+# ------------------------------------
 import os
 import sys
 import ctypes
