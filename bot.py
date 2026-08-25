@@ -1,17 +1,39 @@
+import os
+import ctypes
 import discord
 from discord.ext import commands
 
-# --- Linux環境用 Opus手動ロード処理 ---
+# --- Render/Linux環境用 Opus絶対パス検索＆ロード ---
 if not discord.opus.is_loaded():
-    opus_libs = ['libopus.so.0', 'libopus.so', 'libopus-0.dll']
-    for lib in opus_libs:
+    # Linuxの一般的なOpusライブラリの配置場所一覧
+    opus_paths = [
+        'libopus.so.0',
+        'libopus.so',
+        '/usr/lib/x86_64-linux-gnu/libopus.so.0',
+        '/usr/lib/x86_64-linux-gnu/libopus.so',
+        '/usr/lib/libopus.so.0',
+        '/usr/local/lib/libopus.so.0',
+    ]
+    
+    loaded = False
+    for path in opus_paths:
         try:
-            discord.opus.load_opus(lib)
-            print(f"Opus successfully loaded: {lib}")
+            discord.opus.load_opus(path)
+            print(f"✅ Opus successfully loaded from: {path}")
+            loaded = True
             break
         except Exception:
             continue
-# ------------------------------------
+            
+    if not loaded:
+        print("⚠️ Failed to load Opus from standard paths. Trying ctypes cdll...")
+        try:
+            ctypes.cdll.LoadLibrary('libopus.so.0')
+            discord.opus.load_opus('libopus.so.0')
+            print("✅ Opus successfully loaded via ctypes!")
+        except Exception as e:
+            print(f"❌ Critical Opus Load Error: {e}")
+# --------------------------------------------------
 import os
 import sys
 import ctypes
